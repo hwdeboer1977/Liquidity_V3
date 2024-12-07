@@ -1,0 +1,21 @@
+{
+  "name": "bot_uniswap",
+  "version": "1.0.0",
+  "description": "",
+  "main": "master_all_v18_Uniswap_ARB_INITIALISE.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@uniswap/sdk-core": "^4.1.3",
+    "@uniswap/v3-core": "^1.0.1",
+    "@uniswap/v3-periphery": "^1.4.4",
+    "@uniswap/v3-sdk": "^3.10.2",
+    "dotenv": "^16.4.5",
+    "ethers": "^5.7.2",
+    "helpers": "^0.0.6",
+    "jsbi": "^3.2.5"
+  }
+}
