@@ -1,0 +1,19 @@
+{
+  "name": "pcs_lp_bots_v3",
+  "version": "1.0.0",
+  "description": "",
+  "main": "get_overview_positions_PCS_BOT_1.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@pancakeswap-libs/sdk": "^1.0.1",
+    "@pancakeswap/v3-sdk": "^3.8.13",
+    "dotenv": "^16.4.7",
+    "ethers": "^5.7.2",
+    "excel4node": "^1.8.2",
+    "jsbi": "^4.3.0"
+  }
+}

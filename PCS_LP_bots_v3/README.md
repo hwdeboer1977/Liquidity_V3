@@ -9,4 +9,4 @@
 
 ### The following file reads all the relevant information on an already created LP position on Pancakeswap:
 
-"...\get_overview_positions_PCS_BOT_1.js"
+- "...\get_overview_positions_PCS_BOT_1.js"
