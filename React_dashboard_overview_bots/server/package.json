@@ -1,0 +1,29 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@ethersproject/providers": "^5.7.2",
+    "@pancakeswap/v3-sdk": "^3.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^5.7.2",
+    "excel4node": "^1.8.2",
+    "express": "^4.19.2",
+    "fs": "^0.0.1-security",
+    "jsbi": "^3.2.5",
+    "write-excel-file": "^1.4.30"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

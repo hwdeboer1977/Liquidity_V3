@@ -1,0 +1,51 @@
+{
+  "name": "adminpanel",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": "20.10.0",
+    "npm": "10.5.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "start": "react-scripts start",
+    "build": "vite build",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ethersproject/providers": "^5.7.2",
+    "@pancakeswap-libs/sdk": "^1.0.1",
+    "@pancakeswap/v3-sdk": "^3.8.0",
+    "chart.js": "^4.4.2",
+    "chartjs-plugin-datalabels": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.11.1",
+    "excel": "^1.0.1",
+    "excel4node": "^1.8.2",
+    "from": "^0.1.7",
+    "fs": "^0.0.1-security",
+    "import": "^0.0.6",
+    "jsbi": "^3.2.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-icons": "^5.0.1",
+    "react-router-dom": "^6.23.1",
+    "react-scripts": "^5.0.1",
+    "recharts": "^2.12.4",
+    "styled-components": "^6.1.8",
+    "write-excel-file": "^1.4.30"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.2.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.1",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.6",
+    "vite": "^5.2.0"
+  }
+}
