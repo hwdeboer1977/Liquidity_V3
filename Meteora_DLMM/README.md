@@ -13,8 +13,10 @@ To optimize the LP it used the following Rebalancing Strategy:
 
 Create a new LP postion at the Meteora DEX with:
 
-- ...\src\01_initializeLP_DLMM.ts
+- ...\src\01_initializeLP_DLMM.ts (example SOL/USDC)
+- ...\src\01_initializeLP_DLMM_FC.ts (example FARTCOIN/USDC)
 
 Monitor current LP position, and rebalances if out of range, with:
 
-- ...\src\02_monitorLP_DLMM.ts
+- ...\src\02_monitorLP_DLMM.ts (example SOL/USDC)
+- ...\src\02_monitorLP_DLMM_FC.ts (example FARTCOIN/USDC)
