@@ -6,6 +6,7 @@ const fetch = require("node-fetch");
 const fs = require("node:fs");
 const JSBI = require("jsbi");
 const { BigNumber } = require("ethers");
+//const { getNonce } = require("./helpers"); // import it
 
 const {
   abi: IUniswapV3PoolABI,
@@ -108,11 +109,15 @@ const contractQuoteToken = new ethers.Contract(
   ERC20ABI,
   connectedWallet
 );
+
 /********* NONCE TRACKING *********/
-let baseNonce = provider.getTransactionCount(WALLET_ADDRESS);
+const baseNoncePromise = provider.getTransactionCount(
+  WALLET_ADDRESS,
+  "pending"
+);
 let nonceOffset = 0;
 function getNonce() {
-  return baseNonce.then((nonce) => nonce + nonceOffset++);
+  return baseNoncePromise.then((n) => n + nonceOffset++);
 }
 
 /********* STEP 1: APPROVE TOKENS *********/
@@ -383,11 +388,16 @@ async function addLiquidity() {
   console.log("✅ LP Minted");
 }
 
-async function main() {
+async function createLP() {
   await getETHPrice();
   await readBalance();
   // await approveContract(contractBaseToken);
   //await approveContract(contractQuoteToken);
   await addLiquidity();
 }
-main();
+
+module.exports = createLP;
+
+if (require.main === module) {
+  createLP().catch(console.error);
+}
