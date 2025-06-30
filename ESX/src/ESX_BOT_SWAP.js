@@ -4,6 +4,7 @@ const ERC20ABI = require("./abi.json");
 const {
   abi: IUniswapV3PoolABI,
 } = require("@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json");
+const { getNonce } = require("./helpers");
 
 // --- Wallet Setup ---
 const ALCHEMY_KEY = process.env.ALCHEMY_API_KEY;
@@ -29,9 +30,6 @@ const ESX_ADDRESS = "0x6a72d3a87f97a0fee2c2ee4233bdaebc32813d7a"; // ESX
 const poolAddress = "0xc787ff6f332ee11b2c24fd8c112ac155f95b14ab";
 const decimalsBase = 10 ** 18; // WETH decimals
 const decimalsQuote = 10 ** 9; // ESX decimals
-const minPriceFactor = 0.9;
-const maxPriceFactor = 1.1;
-const factorInLP = 0.5;
 let amountIn = 0;
 let tokenInAddress = 0;
 let tokenOutAddress = 0;
@@ -86,16 +84,6 @@ const contractQuoteToken = new ethers.Contract(
   ERC20ABI,
   connectedWallet
 );
-
-/********* NONCE TRACKING *********/
-const baseNoncePromise = provider.getTransactionCount(
-  WALLET_ADDRESS,
-  "pending"
-);
-let nonceOffset = 0;
-function getNonce() {
-  return baseNoncePromise.then((n) => n + nonceOffset++);
-}
 
 // Contract instances
 const tokenWETH = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, wallet);
@@ -251,15 +239,14 @@ async function getETHPrice() {
 }
 
 async function swapTokens() {
-  // Check nonce
-  getNonce();
-  console.log("Nonce: ", nonceOffset);
-
   await readBalance();
 
   // 1. ERC-20 approve: wallet -> Permit2
   console.log("Approving Permit2 to spend input tokens...");
-  const tx = await tokenIn.approve(PERMIT2_ADDRESS, amountIn);
+  const nonce1 = await getNonce();
+  const tx = await tokenIn.approve(PERMIT2_ADDRESS, amountIn, {
+    nonce: nonce1,
+  });
   console.log("Approve tx hash:", tx.hash);
 
   // Wait for 1 confirmation
@@ -274,14 +261,15 @@ async function swapTokens() {
   // 2. Permit2 approve: Permit2 → Router (allow router to spend from Permit2)
   const permitExpiry = Math.floor(Date.now() / 1000) + 3600; // valid for 1 hour
 
-  console.log("Approving Router via Permit2...");
+  const nonce2 = await getNonce();
   const tx2 = await permit2.approve(
     tokenInAddress,
     UNIVERSAL_ROUTER_ADDRESS,
     amountIn,
     permitExpiry,
-    { nonce: await getNonce() }
+    { nonce: nonce2 }
   );
+  console.log("Nonce (Permit2):", nonce2);
   console.log("Permit2→Router approval tx hash:", tx2.hash);
 
   //👉 Wait for on-chain confirmation
@@ -351,17 +339,17 @@ async function swapTokens() {
   );
   console.log("maxFee:", ethers.utils.formatUnits(maxFee, "gwei"));
 
-  getNonce();
-  console.log("Nonce: ", nonceOffset);
-
   const poolAddr = await factory.getPool(tokenInAddress, tokenOutAddress, fee);
   console.log("Pool:", poolAddr);
 
+  const nonce3 = await getNonce();
   const txSwap = await router.execute(commands, inputs, deadline, {
     maxPriorityFeePerGas: bumpedTip,
     maxFeePerGas: maxFee,
-    gasLimit: ethers.BigNumber.from("5000000"), // enough limit for swap
+    gasLimit: ethers.BigNumber.from("500000"),
+    nonce: nonce3,
   });
+  console.log("Nonce (Router):", nonce3);
   const receiptSwap = await txSwap.wait();
   console.log("Swapped!", receiptSwap.transactionHash);
 }

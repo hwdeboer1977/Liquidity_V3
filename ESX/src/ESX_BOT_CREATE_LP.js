@@ -6,7 +6,7 @@ const fetch = require("node-fetch");
 const fs = require("node:fs");
 const JSBI = require("jsbi");
 const { BigNumber } = require("ethers");
-//const { getNonce } = require("./helpers"); // import it
+const { getNonce } = require("./helpers");
 
 const {
   abi: IUniswapV3PoolABI,
@@ -37,10 +37,10 @@ const wallet = new ethers.Wallet(WALLET_SECRET, provider);
 const connectedWallet = wallet.connect(provider);
 
 /********* CONSTANTS *********/
-const minPriceFactor = 0.9;
-const maxPriceFactor = 1.1;
-const factorInLP = 0.5;
-const setGasLimit = 3000000;
+const minPriceFactor = 0.99;
+const maxPriceFactor = 1.02;
+const factorInLP = 0.7;
+const setGasLimit = 500000;
 const setGasHigher = 1;
 const fee = 3000;
 const chainId = 8453;
@@ -110,39 +110,26 @@ const contractQuoteToken = new ethers.Contract(
   connectedWallet
 );
 
-/********* NONCE TRACKING *********/
-const baseNoncePromise = provider.getTransactionCount(
-  WALLET_ADDRESS,
-  "pending"
-);
-let nonceOffset = 0;
-function getNonce() {
-  return baseNoncePromise.then((n) => n + nonceOffset++);
-}
-
 /********* STEP 1: APPROVE TOKENS *********/
-async function approveContract(tokenContract) {
-  let feeData = await provider.getFeeData();
-  let amountIn = 1e36;
+async function approveContract(tokenContract, nonce) {
+  const feeData = await provider.getFeeData();
+  const amountIn = 1e36;
   const approvalAmount = JSBI.BigInt(amountIn).toString();
 
-  // await tokenContract
-  //   .connect(connectedWallet)
-  //   .approve(swapRouterAddress, approvalAmount, {
-  //     maxFeePerGas: feeData.maxFeePerGas * setGasHigher,
-  //     maxPriorityFeePerGas: feeData.maxPriorityFeePerGas * setGasHigher,
-  //     gasLimit: setGasLimit,
-  //     nonce: getNonce(),
-  //   });
-
-  await tokenContract
-    .connect(connectedWallet)
-    .approve(positionManagerAddress, approvalAmount, {
-      maxFeePerGas: feeData.maxFeePerGas * setGasHigher,
-      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas * setGasHigher,
+  const tx = await tokenContract.approve(
+    positionManagerAddress,
+    approvalAmount,
+    {
+      maxFeePerGas: feeData.maxFeePerGas.mul(setGasHigher),
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(setGasHigher),
       gasLimit: setGasLimit,
-      nonce: getNonce(),
-    });
+      nonce,
+    }
+  );
+
+  console.log("  → TX sent:", tx.hash);
+  const receipt = await tx.wait(1);
+  console.log("  ✅ Confirmed in block:", receipt.blockNumber);
 }
 
 // Function to calculate price ESX/WETH using sqrtPriceX96
@@ -267,7 +254,7 @@ async function getETHPrice() {
   console.log(`ETH/USD (from Coingecko): $${ethPrice}`);
 }
 
-async function addLiquidity() {
+async function addLiquidity(nonce) {
   // === 1. Fetch wallet balances ===
   const [balanceETH, balanceQuoteRaw, balanceBaseRaw] = await Promise.all([
     provider.getBalance(wallet.address),
@@ -374,26 +361,40 @@ async function addLiquidity() {
   );
 
   const feeData = await provider.getFeeData();
-  const tx = await wallet.sendTransaction({
-    to: positionManagerAddress,
-    data: calldata,
-    value,
-    maxFeePerGas: feeData.maxFeePerGas.mul(setGasHigher),
-    maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(setGasHigher),
-    gasLimit: setGasLimit,
-    nonce: await getNonce(),
-  });
-  console.log("Mint tx:", tx.hash);
-  await tx.wait();
-  console.log("✅ LP Minted");
+  try {
+    const tx2 = await wallet.sendTransaction({
+      to: positionManagerAddress,
+      data: calldata,
+      value,
+      maxFeePerGas: feeData.maxFeePerGas.mul(setGasHigher),
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(setGasHigher),
+      gasLimit: setGasLimit,
+      nonce: nonce,
+    });
+
+    console.log("Mint tx sent:", tx2.hash);
+    const receipt2 = await tx2.wait(1);
+    console.log("✅ LP Minted in block:", receipt2.blockNumber);
+  } catch (err) {
+    console.error("❌ Mint transaction failed:", err.reason || err.message);
+  }
 }
 
 async function createLP() {
   await getETHPrice();
   await readBalance();
-  // await approveContract(contractBaseToken);
-  //await approveContract(contractQuoteToken);
-  await addLiquidity();
+
+  // Approve both tokens
+  // Use unique nonces for each tx
+  const nonce1 = await getNonce(); // for base token approval
+  await approveContract(contractBaseToken, nonce1);
+
+  const nonce2 = await getNonce(); // for quote token approval
+  await approveContract(contractQuoteToken, nonce2);
+
+  const nonce3 = await getNonce(); // for LP mint
+  // Mint LP position with next nonce
+  await addLiquidity(nonce3);
 }
 
 module.exports = createLP;
