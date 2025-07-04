@@ -2,23 +2,30 @@
 const { ethers } = require("ethers");
 require("dotenv").config();
 const { getNonce } = require("./helpers"); // import it
+const {
+  abi: IUniswapV3PoolABI,
+} = require("@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json");
+const JSBI = require("jsbi");
+const ERC20ABI = require("./abi.json");
 
 /********* CONFIG *********/
 const ALCHEMY_KEY = process.env.ALCHEMY_API_KEY;
 const WALLET_ADDRESS = process.env.MY_WALLET;
 const WALLET_SECRET = process.env.MY_PK_DEV_WALLET;
+const poolAddress = "0xc787ff6f332ee11b2c24fd8c112ac155f95b14ab";
 
 const provider = new ethers.providers.JsonRpcProvider(
   `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`
 );
 const wallet = new ethers.Wallet(WALLET_SECRET, provider);
 
-// Define MaxUint128 manually
+// Max value for uint128 (used to collect all tokens)
 const MaxUint128 = ethers.BigNumber.from("0xffffffffffffffffffffffffffffffff");
 
 // Uniswap V3 Position Manager
 const positionManagerAddress = "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1";
 
+// Manually defined ABI for minimal PositionManager interaction
 const INonfungiblePositionManagerABI = [
   "function balanceOf(address owner) view returns (uint256)",
   "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
@@ -28,11 +35,26 @@ const INonfungiblePositionManagerABI = [
   "function multicall(bytes[] calldata data) payable external returns (bytes[] memory results)",
 ];
 
+// Contract instances
 const positionManager = new ethers.Contract(
   positionManagerAddress,
   INonfungiblePositionManagerABI,
   wallet
 );
+
+const poolContract = new ethers.Contract(
+  poolAddress,
+  IUniswapV3PoolABI,
+  provider
+);
+
+// Utility: convert sqrtPriceX96 to tick
+function getTickAtSqrtRatio(sqrtPriceX96) {
+  let tick = Math.floor(Math.log((sqrtPriceX96 / Q96) ** 2) / Math.log(1.0001));
+  return tick;
+}
+
+const Q96 = JSBI.exponentiate(JSBI.BigInt(2), JSBI.BigInt(96));
 
 /********* REMOVE LIQUIDITY + COLLECT *********/
 async function removeLiquidity(nonce) {
@@ -53,16 +75,75 @@ async function removeLiquidity(nonce) {
   const liquidity = pos.liquidity;
   console.log("Liquidity: ", liquidity.toString());
 
+  // ⛔️ Guard clause for empty positions
+  if (liquidity.isZero()) {
+    console.log("⚠️ Position has zero liquidity. Skipping removal.");
+    return;
+  }
+
   const deadline = Math.floor(Date.now() / 1000) + 600;
 
   const iface = new ethers.utils.Interface(INonfungiblePositionManagerABI);
+
+  // Token contracts
+  var token0contract = new ethers.Contract(pos.token0, ERC20ABI, provider);
+  var token1contract = new ethers.Contract(pos.token1, ERC20ABI, provider);
+
+  // Get ticks to determine amounts
+  let slot0 = await poolContract.slot0();
+  const tickLow = pos.tickLower;
+  const tickHigh = pos.tickUpper;
+
+  let sqrtPriceX96 = slot0[0];
+  let Decimal0 = await token0contract.decimals();
+  let Decimal1 = await token1contract.decimals();
+
+  // Get the correct token amounts
+  // Depends on TickLow, tickHigh, sqrtPriceX96
+  let sqrtRatioA = Math.sqrt(1.0001 ** tickLow);
+  let sqrtRatioB = Math.sqrt(1.0001 ** tickHigh);
+
+  let currentTick = getTickAtSqrtRatio(sqrtPriceX96);
+  let sqrtPrice = sqrtPriceX96 / Q96;
+
+  let amount0wei = 0;
+  let amount1wei = 0;
+
+  if (currentTick <= tickLow) {
+    amount0wei = Math.floor(
+      liquidity * ((sqrtRatioB - sqrtRatioA) / (sqrtRatioA * sqrtRatioB))
+    );
+  } else if (currentTick > tickHigh) {
+    amount1wei = Math.floor(liquidity * (sqrtRatioB - sqrtRatioA));
+  } else if (currentTick >= tickLow && currentTick < tickHigh) {
+    amount0wei = Math.floor(
+      liquidity * ((sqrtRatioB - sqrtPrice) / (sqrtPrice * sqrtRatioB))
+    );
+    amount1wei = Math.floor(liquidity * (sqrtPrice - sqrtRatioA));
+  }
+
+  // Amount 0 and 1 in readable formats
+  const amount0Human = Math.abs(amount0wei / 10 ** Decimal0).toFixed(Decimal0);
+  const amount1Human = Math.abs(amount1wei / 10 ** Decimal1).toFixed(Decimal1);
+
+  console.log("Amount token 0: ", amount0Human);
+  console.log("Amount token 1: ", amount1Human);
+
+  // Convert to raw (wei) amounts
+  const amount0Min = ethers.utils.parseUnits(amount0Human, Decimal0);
+  const amount1Min = ethers.utils.parseUnits(amount1Human, Decimal1);
+
+  // Apply slippage buffer (e.g., 3%)
+  const slippagePercent = 0.03; // 3%
+  const safeAmount0Min = amount0Min.mul(100 - slippagePercent * 100).div(100);
+  const safeAmount1Min = amount1Min.mul(100 - slippagePercent * 100).div(100);
 
   const decreaseLiquidityData = iface.encodeFunctionData("decreaseLiquidity", [
     {
       tokenId: positionId,
       liquidity,
-      amount0Min: 0,
-      amount1Min: 0,
+      amount0Min: safeAmount0Min,
+      amount1Min: safeAmount1Min,
       deadline,
     },
   ]);
@@ -96,6 +177,7 @@ async function removeLiquidity(nonce) {
 /********* MAIN ENTRY *********/
 async function pullLP() {
   const nonce = await getNonce(); // for LP mint
+
   await removeLiquidity(nonce);
 }
 
