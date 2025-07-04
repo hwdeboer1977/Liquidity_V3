@@ -1,6 +1,5 @@
 /********* IMPORTS *********/
 const { ethers } = require("ethers");
-const { JsonRpcProvider } = require("ethers");
 require("dotenv").config();
 const fetch = require("node-fetch");
 const fs = require("node:fs");
@@ -11,19 +10,10 @@ const { getNonce } = require("./helpers");
 const {
   abi: IUniswapV3PoolABI,
 } = require("@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json");
-const {
-  abi: SwapRouterABI,
-} = require("@uniswap/v3-periphery/artifacts/contracts/interfaces/ISwapRouter.sol/ISwapRouter.json");
-const {
-  abi: INonfungiblePositionManagerABI,
-} = require("@uniswap/v3-periphery/artifacts/contracts/interfaces/INonfungiblePositionManager.sol/INonfungiblePositionManager.json");
-const aggregatorV3InterfaceABI = require("./abis/pricefeedABI.json");
 const ERC20ABI = require("./abi.json");
 const { Token, Percent } = require("@uniswap/sdk-core");
 const { Pool, Position, nearestUsableTick } = require("@uniswap/v3-sdk");
-const { TickMath, FullMath, TickList } = require("@uniswap/v3-sdk");
-const { MintOptions, NonfungiblePositionManager } = require("@uniswap/v3-sdk");
-const { getPoolImmutables, getPoolState } = require("./helpers");
+const { NonfungiblePositionManager } = require("@uniswap/v3-sdk");
 
 /********* CONFIG *********/
 const ALCHEMY_KEY = process.env.ALCHEMY_API_KEY;
@@ -37,10 +27,10 @@ const wallet = new ethers.Wallet(WALLET_SECRET, provider);
 const connectedWallet = wallet.connect(provider);
 
 /********* CONSTANTS *********/
-const minPriceFactor = 0.99;
-const maxPriceFactor = 1.02;
-const factorInLP = 0.7;
-const setGasLimit = 500000;
+const minPriceFactor = 0.9;
+const maxPriceFactor = 1.1;
+const factorInLP = 0.1;
+const setGasLimit = 1_000_000;
 const setGasHigher = 1;
 const fee = 3000;
 const chainId = 8453;
@@ -48,10 +38,7 @@ const chainId = 8453;
 const baseTokenCA = "0x4200000000000000000000000000000000000006"; // WETH
 const quoteTokenCA = "0x6a72d3a87f97a0fee2c2ee4233bdaebc32813d7a"; // ESX
 const poolAddress = "0xc787ff6f332ee11b2c24fd8c112ac155f95b14ab";
-const swapRouterAddress = "0x2626664c2603336E57B271c5C0b26F421741e481";
-//0xE592427A0AEce92De3Edee1F18E0157C05861564
 const positionManagerAddress = "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1";
-const oracleAddress = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612";
 
 // Token decimals (used for scaling values)
 const decimalsBase = 10 ** 18; // WETH decimals
@@ -70,29 +57,11 @@ const QuoteToken = new Token(chainId, address1, decimals1, symbol1, name1);
 
 /********* STATE VARIABLES *********/
 let currentPrice = 0;
-let minPrice = 0;
-let maxPrice = 0;
 let sqrtPriceX96 = 0;
 let ethPrice = 0;
-let scenario = 0;
-let statusPoolContract = 1;
-let priceOracleETHUSDC = 0;
-let nonceNumber = 0;
 let currentPriceETH_ESX = 0;
 
 /********* CONTRACT INSTANCES *********/
-// const tokenContract0 = new ethers.Contract(address0, ERC20ABI, provider);
-// const tokenContract1 = new ethers.Contract(address1, ERC20ABI, provider);
-const swapRouterContract = new ethers.Contract(
-  swapRouterAddress,
-  SwapRouterABI,
-  provider
-);
-const NonfungiblePositionContract = new ethers.Contract(
-  positionManagerAddress,
-  IUniswapV3PoolABI,
-  provider
-);
 const poolContract = new ethers.Contract(
   poolAddress,
   IUniswapV3PoolABI,
@@ -330,12 +299,6 @@ async function addLiquidity(nonce) {
   const amountToken0Str = amountToken0.toFixed(decimals0);
   const amount0 = ethers.utils.parseUnits(amountToken0Str, decimals0);
 
-  // const amountToken0 = balanceQuote * factorInLP;
-  // console.log("Amount Token 0: ", amountToken0);
-  // const amountToken0Str = amountToken0.toFixed(decimals1);
-  // const amount0 = ethers.utils.parseUnits(amountToken0Str, decimals1);
-  // console.log("Amount Token 0: ", amountToken0);
-
   const position = Position.fromAmount0({
     pool: poolSDK,
     tickLower,
@@ -344,11 +307,34 @@ async function addLiquidity(nonce) {
     useFullPrecision: true,
   });
 
-  console.log(
-    "Desired:",
-    position.mintAmounts.amount0.toString(),
+  // Calculate required amounts 0 and 1
+  const requiredAmount0 = BigNumber.from(
+    position.mintAmounts.amount0.toString()
+  );
+  const requiredAmount1 = BigNumber.from(
     position.mintAmounts.amount1.toString()
   );
+
+  console.log(
+    "Desired:",
+    requiredAmount0.toString(),
+    requiredAmount1.toString()
+  );
+
+  // Check if we have enough token 0 and 1 in wallet
+  const [balance0Raw, balance1Raw] = await Promise.all([
+    contractBaseToken.balanceOf(wallet.address),
+    contractQuoteToken.balanceOf(wallet.address),
+  ]);
+
+  if (balance0Raw.lt(requiredAmount0) || balance1Raw.lt(requiredAmount1)) {
+    console.error("❌ Insufficient balance to mint LP position.");
+    console.log(`Need: ${requiredAmount0} token0, ${requiredAmount1} token1`);
+    console.log(
+      `Have: ${balance0Raw.toString()} token0, ${balance1Raw.toString()} token1`
+    );
+    return;
+  }
 
   // === 6. Build and send mint transaction ===
   const { calldata, value } = NonfungiblePositionManager.addCallParameters(
@@ -384,13 +370,13 @@ async function createLP() {
   await getETHPrice();
   await readBalance();
 
-  // Approve both tokens
+  // Approve both tokens: only need to approve once
   // Use unique nonces for each tx
-  const nonce1 = await getNonce(); // for base token approval
-  await approveContract(contractBaseToken, nonce1);
+  //const nonce1 = await getNonce(); // for base token approval
+  //await approveContract(contractBaseToken, nonce1);
 
-  const nonce2 = await getNonce(); // for quote token approval
-  await approveContract(contractQuoteToken, nonce2);
+  //const nonce2 = await getNonce(); // for quote token approval
+  //await approveContract(contractQuoteToken, nonce2);
 
   const nonce3 = await getNonce(); // for LP mint
   // Mint LP position with next nonce
