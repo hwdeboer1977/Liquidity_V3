@@ -157,6 +157,15 @@ async function readBalance() {
   console.log("Difference ESX: ", diffESX);
   console.log("Difference WETH: ", diffWETH);
 
+  const MIN_SWAP_USD = 2; // or 5 if you want more protection
+
+  if (Math.abs(diffESX) < MIN_SWAP_USD && Math.abs(diffWETH) < MIN_SWAP_USD) {
+    console.log(
+      "⚖️ Token values already balanced within min swap threshold — no swap."
+    );
+    return; // abort before attempting swap
+  }
+
   if (diffESX > 0) {
     // You need more ESX → sell WETH
     const wethToSell = diffESX / ethPrice;
@@ -203,117 +212,111 @@ async function getETHPrice() {
 async function swapTokens() {
   await readBalance();
 
-  // 1. ERC-20 approve: wallet -> Permit2
-  console.log("Approving Permit2 to spend input tokens...");
+  // Safety checks
+  if (!amountIn || amountIn.eq(0)) {
+    console.log("⛔ No valid swap amount. Skipping...");
+    return;
+  }
+  if (!tokenIn || !tokenInAddress || !tokenOutAddress) {
+    console.log("⛔ Token addresses not set. Cannot proceed.");
+    return;
+  }
+
+  // STEP 1: ERC-20 approve: wallet -> Permit2
+  console.log("🔑 Approving token for Permit2...");
   const nonce1 = await getNonce();
-  const tx = await tokenIn.approve(PERMIT2_ADDRESS, amountIn, {
-    nonce: nonce1,
-  });
-  console.log("Approve tx hash:", tx.hash);
+  try {
+    const tx = await tokenIn.approve(PERMIT2_ADDRESS, amountIn, {
+      nonce: nonce1,
+    });
+    console.log("Approve tx hash:", tx.hash);
+    const receipt = await tx.wait(1);
+    console.log("✅ Approval confirmed in block", receipt.blockNumber);
+  } catch (err) {
+    console.error("❌ Approval failed:", err.reason || err.message);
+    return;
+  }
 
-  // Wait for 1 confirmation
-  const receipt = await tx.wait(1);
-  console.log("✅ Approval confirmed in block", receipt.blockNumber);
-  console.log(
-    "Permit2 approved for",
-    ethers.utils.formatEther(amountIn),
-    "tokens"
-  );
-
-  // 2. Permit2 approve: Permit2 → Router (allow router to spend from Permit2)
-  const permitExpiry = Math.floor(Date.now() / 1000) + 3600; // valid for 1 hour
-
+  // STEP 2: Permit2 → Router
+  const permitExpiry = Math.floor(Date.now() / 1000) + 3600; // 1 hour validity
   const nonce2 = await getNonce();
-  const tx2 = await permit2.approve(
-    tokenInAddress,
-    UNIVERSAL_ROUTER_ADDRESS,
-    amountIn,
-    permitExpiry,
-    { nonce: nonce2 }
-  );
-  console.log("Nonce (Permit2):", nonce2);
-  console.log("Permit2→Router approval tx hash:", tx2.hash);
+  try {
+    const tx2 = await permit2.approve(
+      tokenInAddress,
+      UNIVERSAL_ROUTER_ADDRESS,
+      amountIn,
+      permitExpiry,
+      { nonce: nonce2 }
+    );
+    console.log("Permit2→Router approval tx hash:", tx2.hash);
+    const receipt2 = await tx2.wait(1);
+    console.log("✅ Universal Router approved at block", receipt2.blockNumber);
+  } catch (err) {
+    console.error("❌ Permit2 approval failed:", err.reason || err.message);
+    return;
+  }
 
-  //👉 Wait for on-chain confirmation
-  const receipt2 = await tx2.wait(1);
-  console.log(
-    "✅ Universal Router approval confirmed in block",
-    receipt2.blockNumber
-  );
-
-  // Build the swap path: tokenIn -> tokenOut with fee
-  const fee = 3000; // pool fee 0.30% (3000 in Uniswap V3 fee units)
+  // STEP 3: Encode path and quote
+  const fee = 3000;
   const path = ethers.utils.solidityPack(
     ["address", "uint24", "address"],
     [tokenInAddress, fee, tokenOutAddress]
   );
 
-  const quoter = new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider);
+  let quotedOut;
+  try {
+    quotedOut = await quoter.callStatic.quoteExactInput(path, amountIn);
+  } catch (err) {
+    console.error("❌ Quote failed:", err.reason || err.message);
+    return;
+  }
 
-  // // use callStatic to simulate without signing a tx
-  const quotedOut = await quoter.callStatic.quoteExactInput(path, amountIn);
+  if (quotedOut.isZero()) {
+    console.log("⚠️ Quoted output is zero — aborting swap.");
+    return;
+  }
 
-  console.log("Quoted WETH:", ethers.utils.formatUnits(quotedOut, decimalsOut));
+  const SLIPPAGEPERCENT = 1;
+  const amountOutMin = quotedOut.mul(100 - SLIPPAGEPERCENT).div(100);
+  const deadline = Math.floor(Date.now() / 1000) + 300;
 
-  // Define slippage tolerance and deadline
-  const slippagePercent = 1; // e.g.  1% acceptable slippage
-  const slippageTolerance = 100 - slippagePercent;
-  const deadline = Math.floor(Date.now() / 1000) + 300; // 5 minute deadline from now
-
-  // Estimate expected output (for demonstration, assume ~50 USDC for 0.1 WETH)
-  const amountOutMin = quotedOut.mul(slippageTolerance).div(100);
   console.log(
-    "Minimum acceptable output:",
+    "🧮 Quoted out:",
+    ethers.utils.formatUnits(quotedOut, decimalsOut)
+  );
+  console.log(
+    "🛡 Min out w/ slippage:",
     ethers.utils.formatUnits(amountOutMin, decimalsOut)
   );
 
-  console.log(
-    `Swapping ${ethers.utils.formatUnits(
-      amountIn,
-      decimals
-    )} ESX for ${ethers.utils.formatUnits(amountOutMin, 18)}`
-  );
-
   // This yields 50 * 0.99 = 49.5 USDC as minimum, in scaled units
-
   // Using solidityPack for an unpadded byte path (V3 path is tightly packed as token+fee+token):contentReference[oaicite:23]{index=23}
-
-  // Prepare commands and inputs for Universal Router
-  const commands = "0x00"; // V3_SWAP_EXACT_IN command
+  const commands = "0x00"; // V3_SWAP_EXACT_IN
   const swapInput = ethers.utils.defaultAbiCoder.encode(
     ["address", "uint256", "uint256", "bytes", "bool"],
     [wallet.address, amountIn, amountOutMin, path, true]
   );
-  const inputs = [swapInput];
 
   const feeData = await provider.getFeeData();
-  const base = feeData.lastBaseFeePerGas; // current base-fee
-  const tip = feeData.maxPriorityFeePerGas; // recommended tip (~1.5 gwei)
+  const base = feeData.lastBaseFeePerGas;
+  const tip = feeData.maxPriorityFeePerGas;
   const bumpedTip = tip.mul(ethers.BigNumber.from(3)); // triple the tip
   const maxFee = base.mul(2).add(bumpedTip); // allow some buffer
 
-  console.log("baseFee:", ethers.utils.formatUnits(base, "gwei"), "gwei");
-  console.log(
-    "tip:",
-    ethers.utils.formatUnits(tip, "gwei"),
-    "→ bumped to:",
-    ethers.utils.formatUnits(bumpedTip, "gwei")
-  );
-  console.log("maxFee:", ethers.utils.formatUnits(maxFee, "gwei"));
-
-  const poolAddr = await factory.getPool(tokenInAddress, tokenOutAddress, fee);
-  console.log("Pool:", poolAddr);
-
   const nonce3 = await getNonce();
-  const txSwap = await router.execute(commands, inputs, deadline, {
-    maxPriorityFeePerGas: bumpedTip,
-    maxFeePerGas: maxFee,
-    gasLimit: ethers.BigNumber.from("500000"),
-    nonce: nonce3,
-  });
-  console.log("Nonce (Router):", nonce3);
-  const receiptSwap = await txSwap.wait();
-  console.log("Swapped!", receiptSwap.transactionHash);
+  try {
+    const txSwap = await router.execute(commands, [swapInput], deadline, {
+      maxPriorityFeePerGas: bumpedTip,
+      maxFeePerGas: maxFee,
+      gasLimit: 500000,
+      nonce: nonce3,
+    });
+    console.log("🚀 Swap tx hash:", txSwap.hash);
+    const receiptSwap = await txSwap.wait(1);
+    console.log("✅ Swapped in block:", receiptSwap.blockNumber);
+  } catch (err) {
+    console.error("❌ Swap failed:", err.reason || err.message);
+  }
 }
 
 module.exports = swapTokens;
