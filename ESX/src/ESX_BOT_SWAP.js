@@ -21,8 +21,6 @@ const connectedWallet = wallet.connect(provider);
 // Addresses (Base network)
 const UNIVERSAL_ROUTER_ADDRESS = "0x6ff5693b99212da76ad316178a184ab56d299b43"; // UniversalRouter on Base:contentReference[oaicite:9]{index=9}
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3"; // Permit2 (global):contentReference[oaicite:10]{index=10}
-const TOKEN_IN_ADDRESS = "0x6a72d3A87f97a0fEE2c2ee4233BdAEBc32813D7a"; // ESX
-const TOKEN_OUT_ADDRESS = "0x4200000000000000000000000000000000000006"; // WETH
 const WETH_DECIMALS = 18; // WETH decimals
 const ESX_DECIMALS = 9;
 const WETH_ADDRESS = "0x4200000000000000000000000000000000000006"; // WETH
@@ -121,9 +119,6 @@ async function getPoolData(poolContract) {
 
 /********* STEP 3: READ BALANCES *********/
 async function readBalance() {
-  // Get ETH balance in wei
-  const balanceETH = await provider.getBalance(WALLET_ADDRESS);
-
   // Get token balances in wei
   const balanceInWeiESX = await contractQuoteToken.balanceOf(WALLET_ADDRESS);
   const balanceInWeiWETH = await contractBaseToken.balanceOf(WALLET_ADDRESS);
@@ -133,7 +128,6 @@ async function readBalance() {
     parseFloat(ethers.utils.formatEther(balanceInWeiESX)) *
     (decimalsBase / decimalsQuote);
   const balanceWETH = parseFloat(ethers.utils.formatEther(balanceInWeiWETH));
-  const ethBalanceFloat = parseFloat(ethers.utils.formatEther(balanceETH));
 
   // Get current pool state and ETH price in USD
   await getPoolData(poolContract);
@@ -145,7 +139,6 @@ async function readBalance() {
   console.log("ESX per ETH:", currentPriceETH_ESX);
 
   // USD values for each token
-  const usdETH = ethBalanceFloat * currentPriceETH;
   const usdESX = (balanceESX * currentPriceETH) / currentPriceETH_ESX;
   const usdWETH = balanceWETH * currentPriceETH;
 
@@ -195,37 +188,6 @@ async function readBalance() {
   } else {
     console.log("✅ LP token values are balanced. No swap needed.");
   }
-
-  // // Compute required token amounts based on sqrt price range
-  // const sqrtP = Math.sqrt(currentPriceETH_ESX);
-  // const sqrtPmin = sqrtP * minPriceFactor;
-  // const sqrtPmax = sqrtP * maxPriceFactor;
-  // const L = 1;
-  // const requiredETH = (L * (sqrtPmax - sqrtP)) / (sqrtP * sqrtPmax);
-  // const requiredESX = L * (sqrtP - sqrtPmin);
-
-  // console.log(
-  //   `ETH needed: ${requiredETH} (~${requiredETH * currentPriceETH} USD)`
-  // );
-  // console.log(
-  //   `ESX needed: ${requiredESX} (~${
-  //     (requiredESX * currentPriceETH) / currentPriceETH_ESX
-  //   } USD)`
-  // );
-
-  // console.log("📦 Final balances + needs:", {
-  //   balanceESX,
-  //   balanceWETH,
-  //   requiredETH,
-  //   requiredESX,
-  // });
-
-  // return {
-  //   balanceESX,
-  //   balanceETH: balanceWETH,
-  //   requiredESX,
-  //   requiredETH,
-  // };
 }
 
 /********* FETCH ETH PRICE *********/
