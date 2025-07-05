@@ -179,6 +179,11 @@ async function getLiquidity() {
     decimals1
   );
 
+  if (PoolInfo.liquidity === "0") {
+    console.log("⚠️ No liquidity in position.");
+    return 0;
+  }
+
   if (
     PoolInfo.tickCurrent >= PoolInfo.tickLow &&
     PoolInfo.tickCurrent <= PoolInfo.tickHigh
@@ -206,7 +211,6 @@ async function getPosition() {
   return LPinRange;
 }
 
-module.exports = getPosition;
 module.exports = getPosition;
 
 // ✅ Optional: allow standalone execution
