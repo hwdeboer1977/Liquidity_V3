@@ -29,7 +29,7 @@ const connectedWallet = wallet.connect(provider);
 /********* CONSTANTS *********/
 const minPriceFactor = 0.9;
 const maxPriceFactor = 1.1;
-const factorInLP = 0.1;
+const factorInLP = 0.7;
 const setGasLimit = 1_000_000;
 const setGasHigher = 1;
 const fee = 3000;
