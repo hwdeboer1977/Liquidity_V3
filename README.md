@@ -1,22 +1,63 @@
 # Liquidity V3
 
-## Liquidity provider bots V3
+### Automated Bots for Concentrated Liquidity Management
 
-- All liquidity provider bots create LP positions autmatically.
-- User only needs to set the price range, for instance -10% - +10%.
+This repository contains a collection of liquidity provider (LP) bots designed to automate liquidity provision across major decentralized exchanges (DEXs) that support concentrated liquidity. Each bot creates and manages LP positions within a specified price range, streamlining the process for users.
 
-Orca DEX:
+## ✅ Features
 
-- ....\Orca_solana_LP_bots_v3
+- 📈 **Auto-Liquidity Provisioning**: Bots automatically provide liquidity in defined price ranges (e.g., -10% to +10%).
+- 🛠️ **Customizable Parameters**: Easily configure ranges and update positions with minimal effort.
+- 🔄 **Cross-DEX Support**: Compatible with Uniswap V3, PancakeSwap V3, Orca (Solana), and Meteora DLMM.
+- 📊 **React Dashboard**: Visual interface for monitoring LP positions, performance, and activity.
 
-Pancakeswap DEX:
+## 📁 Structure
 
-- ....\PCS_LP_bots_v3
+```bash
+Liquidity_V3/
+├── ESX/                          # Advanced LP logic for ESX token pairs
+├── Meteora_DLMM/                # Meteora-specific LP bot examples (Solana)
+├── Orca_solana_LP_bots_v3/      # Orca LP bot logic on Solana
+├── PCS_LP_bots_v3/              # PancakeSwap V3 LP bots
+├── React_dashboard_overview_bots/ # Dashboard frontend to monitor bots
+├── Uniswap_LP_bots_v3/          # Uniswap V3 LP bots (Ethereum, Base, etc.)
+└── README.md
+```
 
-Uniswap DEX:
+### 🚀 How It Works
 
-- ....\Uniswap_LP_bots_v3
+- User sets a price range, e.g., -10% to +10% from the current price.
 
-## React dashboard to display current LP positions on frontend:
+- Bot fetches pool data, constructs the LP position, and deploys it using the relevant SDK or contracts.
 
-- "...\React_dashboard_overview_bots"
+- Fees are auto-collected while the position remains in range.
+
+- (Optional) Rebalancing and removal strategies can be added.
+
+### 🧰 Dependencies
+
+- JavaScript / Node.js
+- ethers.js / solana-web3.js
+- Uniswap V3 SDK
+- PancakeSwap V3 SDK
+- Orca SDK
+- Meteora SDK
+- React (for dashboard)
+
+### 🌐 Supported Protocols
+
+DEX Chain(s)
+
+- Uniswap V3: Ethereum, Base, Arbitrum
+- PancakeSwap V3: BNB Chain, Base
+- Orca: Solana
+- Meteora: DLMM Solana
+
+### 📊 Dashboard Preview
+
+- A React-based interface to visualize:
+
+👨‍💻 Author
+Henk Wim de Boer
+Smart Contract Developer & DeFi Strategist
+@hwdeboer1977
